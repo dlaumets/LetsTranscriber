@@ -1,0 +1,17 @@
+# Replace YOUR_DOMAIN with your VPS domain
+YOUR_DOMAIN.com {
+    encode gzip
+
+    handle /bot/webhook* {
+        reverse_proxy bot:8081
+    }
+
+    handle {
+        reverse_proxy api:8000
+    }
+}
+
+# HTTP → HTTPS redirect (uncomment when domain is set)
+# http://YOUR_DOMAIN.com {
+#     redir https://{host}{uri} permanent
+# }

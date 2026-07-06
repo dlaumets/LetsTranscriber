@@ -1,0 +1,5 @@
+Host letstranscriber
+  HostName 62.60.151.100
+  User root
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes

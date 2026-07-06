@@ -1,0 +1,12 @@
+data/temp/
+data/jobs/
+models-cache/
+.env
+__pycache__/
+*.pyc
+.venv/
+bin/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+

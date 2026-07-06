@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>История — Transcribe Service</title>
+  <link rel="stylesheet" href="/static/common.css">
+  <style>
+    .item {
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 0;
+      cursor: pointer;
+    }
+    .item:last-child { border-bottom: none; }
+    .item:hover { opacity: 0.85; }
+    .item-text { font-size: 0.95rem; margin-bottom: 0.25rem; }
+    .item-meta { font-size: 0.75rem; color: var(--muted); }
+    .detail {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.95rem;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .toolbar input { margin-bottom: 0; flex: 1; }
+    .toolbar button { white-space: nowrap; }
+    .pagination { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; }
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      background: var(--border);
+      margin-right: 0.35rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>История</h1>
+    <p class="subtitle">Поиск и просмотр транскрипций</p>
+    <nav class="nav">
+      <a href="/">Транскрипция</a>
+      <a href="/history" class="active">История</a>
+    </nav>
+
+    <div class="card">
+      <label>API Key</label>
+      <input type="text" id="api-key" placeholder="Вставьте API key">
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Поиск по тексту...">
+        <button type="button" id="search-btn">Найти</button>
+        <button type="button" class="secondary" id="list-btn">Все</button>
+      </div>
+      <p class="status" id="status"></p>
+      <div id="list"></div>
+      <div class="pagination">
+        <button type="button" class="secondary" id="prev-btn" disabled>←</button>
+        <span id="page-info" class="meta">—</span>
+        <button type="button" class="secondary" id="next-btn" disabled>→</button>
+      </div>
+    </div>
+
+    <div class="card" id="detail-card" style="display:none">
+      <label>Запись</label>
+      <div class="detail" id="detail"></div>
+      <p class="meta" id="detail-meta"></p>
+      <button type="button" class="secondary" id="copy-btn" style="margin-top:0.75rem">Копировать</button>
+    </div>
+  </div>
+
+  <script>
+    const apiKeyInput = document.getElementById('api-key');
+    const savedKey = localStorage.getItem('transcribe_api_key');
+    if (savedKey) apiKeyInput.value = savedKey;
+    apiKeyInput.addEventListener('change', () => {
+      localStorage.setItem('transcribe_api_key', apiKeyInput.value.trim());
+    });
+
+    let page = 1;
+    let total = 0;
+    let limit = 20;
+    let searchQuery = '';
+
+    function headers() {
+      const key = apiKeyInput.value.trim();
+      if (!key) throw new Error('Нужен API key');
+      return { 'X-API-Key': key };
+    }
+
+    function formatMeta(item) {
+      const m = item.meta || {};
+      return [
+        item.created_at?.slice(0, 16).replace('T', ' '),
+        item.source,
+        m.preset,
+        m.duration != null ? m.duration.toFixed(0) + 's' : null,
+      ].filter(Boolean).join(' · ');
+    }
+
+    async function loadList() {
+      const status = document.getElementById('status');
+      const list = document.getElementById('list');
+      status.textContent = 'Загрузка...';
+      status.className = 'status';
+
+      try {
+        const url = searchQuery
+          ? `/v1/history/search?q=${encodeURIComponent(searchQuery)}&page=${page}&limit=${limit}`
+          : `/v1/history?page=${page}&limit=${limit}`;
+        const res = await fetch(url, { headers: headers() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Ошибка');
+
+        total = data.total;
+        list.innerHTML = data.items.length
+          ? data.items.map(item => `
+              <div class="item" data-id="${item.id}">
+                <div class="item-text">${escapeHtml(item.text)}</div>
+                <div class="item-meta">
+                  <span class="badge">${item.source || 'api'}</span>
+                  ${formatMeta(item)}
+                </div>
+              </div>`).join('')
+          : '<p class="meta">Ничего не найдено</p>';
+
+        list.querySelectorAll('.item').forEach(el => {
+          el.addEventListener('click', () => loadDetail(el.dataset.id));
+        });
+
+        document.getElementById('page-info').textContent =
+          `стр. ${page} · ${total} записей`;
+        document.getElementById('prev-btn').disabled = page <= 1;
+        document.getElementById('next-btn').disabled = page * limit >= total;
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = e.message;
+        status.className = 'status error';
+      }
+    }
+
+    async function loadDetail(id) {
+      const card = document.getElementById('detail-card');
+      const detail = document.getElementById('detail');
+      const meta = document.getElementById('detail-meta');
+      try {
+        const res = await fetch(`/v1/history/${id}`, { headers: headers() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Ошибка');
+        detail.textContent = data.text;
+        meta.textContent = formatMeta(data);
+        document.getElementById('copy-btn').onclick = () =>
+          navigator.clipboard.writeText(data.text);
+        card.style.display = 'block';
+        card.scrollIntoView({ behavior: 'smooth' });
+      } catch (e) {
+        document.getElementById('status').textContent = e.message;
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    document.getElementById('search-btn').addEventListener('click', () => {
+      searchQuery = document.getElementById('search').value.trim();
+      page = 1;
+      loadList();
+    });
+    document.getElementById('list-btn').addEventListener('click', () => {
+      searchQuery = '';
+      document.getElementById('search').value = '';
+      page = 1;
+      loadList();
+    });
+    document.getElementById('prev-btn').addEventListener('click', () => { page--; loadList(); });
+    document.getElementById('next-btn').addEventListener('click', () => { page++; loadList(); });
+    document.getElementById('search').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('search-btn').click();
+    });
+
+    if (savedKey) loadList();
+  </script>
+</body>
+</html>
