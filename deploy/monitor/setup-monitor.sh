@@ -15,6 +15,8 @@ if [ ! -f "$APP_DIR/.env" ]; then
   echo "!!! Edit ${APP_DIR}/.env — set MONITOR_BOT_TOKEN and MONITOR_ALLOWED_IDS"
 fi
 
+sed -i 's/\r$//' "$APP_DIR/.env" 2>/dev/null || true
+
 if [ ! -d "$APP_DIR/.venv" ]; then
   python3 -m venv "$APP_DIR/.venv"
 fi

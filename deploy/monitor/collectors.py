@@ -34,20 +34,46 @@ def _fmt_mb(kb: int) -> str:
     return f"{kb / 1024:.0f} MB"
 
 
-def _run(cmd: list[str], timeout: int = 15) -> str:
+def _run(cmd: list[str], timeout: int = 5) -> str:
     if not shutil.which(cmd[0]):
         return ""
+    wrapped = cmd
+    if shutil.which("timeout") and timeout > 0:
+        wrapped = ["timeout", str(timeout), *cmd]
     try:
         result = subprocess.run(
-            cmd,
+            wrapped,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=timeout + 2,
             check=False,
         )
         return (result.stdout or result.stderr or "").strip()
     except (subprocess.TimeoutExpired, OSError):
         return ""
+
+
+def _docker_stats_rows() -> list[str]:
+    out = _run(
+        [
+            "docker",
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
+        ],
+        timeout=6,
+    )
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def _docker_stats_map() -> dict[str, str]:
+    rows: dict[str, str] = {}
+    for row in _docker_stats_rows():
+        parts = row.split("\t")
+        if len(parts) >= 3:
+            rows[parts[0]] = row
+    return rows
 
 
 def collect_server() -> str:
@@ -86,19 +112,11 @@ def pct(used: int, total: int) -> int:
 
 
 def collect_docker() -> str:
-    out = _run(
-        [
-            "docker",
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
-        ]
-    )
-    if not out:
-        return "🐳 <b>Docker</b>\nнет данных (docker недоступен)"
+    rows = _docker_stats_rows()
+    if not rows:
+        return "🐳 <b>Docker</b>\nнет данных (таймаут или docker недоступен)"
     lines = ["🐳 <b>Docker</b>"]
-    for row in out.splitlines():
+    for row in rows:
         name, cpu, mem, mem_pct = row.split("\t", 3)
         short = name.replace("letstranscriber-", "").removesuffix("-1")
         lines.append(f"• <code>{short}</code>: CPU {cpu}, RAM {mem} ({mem_pct})")
@@ -167,7 +185,7 @@ def _fmt_bytes(n: int) -> str:
 
 def collect_transcriber(api_url: str = "http://127.0.0.1:8000") -> str:
     lines = ["🎙 <b>LetsTranscriber</b>"]
-    health = _run(["curl", "-sf", f"{api_url}/v1/health"])
+    health = _run(["curl", "-sf", "--max-time", "3", f"{api_url}/v1/health"], timeout=4)
     if health:
         try:
             data = json.loads(health)
@@ -182,36 +200,69 @@ def collect_transcriber(api_url: str = "http://127.0.0.1:8000") -> str:
     else:
         lines.append("API: недоступен")
 
-    containers = _run(
-        [
-            "docker",
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}",
-            "letstranscriber-api-1",
-            "letstranscriber-bot-1",
-            "letstranscriber-db-1",
-        ]
-    )
-    if containers:
-        for row in containers.splitlines():
-            name, cpu, mem = row.split("\t", 2)
-            short = name.replace("letstranscriber-", "").removesuffix("-1")
-            lines.append(f"• <code>{short}</code>: CPU {cpu}, RAM {mem}")
+    stats = _docker_stats_map()
+    for cname in ("letstranscriber-api-1", "letstranscriber-bot-1", "letstranscriber-db-1"):
+        row = stats.get(cname)
+        if not row:
+            continue
+        name, cpu, mem, _mem_pct = row.split("\t", 3)
+        short = name.replace("letstranscriber-", "").removesuffix("-1")
+        lines.append(f"• <code>{short}</code>: CPU {cpu}, RAM {mem}")
     return "\n".join(lines)
 
 
 def collect_all(transcriber_api: str) -> str:
+    stats = _docker_stats_rows()
+    docker_text = _format_docker_rows(stats)
+
     parts = [
         collect_server(),
         "",
-        collect_transcriber(transcriber_api),
+        collect_transcriber_from_stats(transcriber_api, stats),
         "",
-        collect_docker(),
+        docker_text,
         "",
         collect_systemd(["cpv-bot.service", "cpv-api.service"]),
         "",
         collect_vpn(),
     ]
     return "\n\n".join(parts)
+
+
+def _format_docker_rows(rows: list[str]) -> str:
+    if not rows:
+        return "🐳 <b>Docker</b>\nнет данных (таймаут или docker недоступен)"
+    lines = ["🐳 <b>Docker</b>"]
+    for row in rows:
+        name, cpu, mem, mem_pct = row.split("\t", 3)
+        short = name.replace("letstranscriber-", "").removesuffix("-1")
+        lines.append(f"• <code>{short}</code>: CPU {cpu}, RAM {mem} ({mem_pct})")
+    return "\n".join(lines)
+
+
+def collect_transcriber_from_stats(api_url: str, stats_rows: list[str]) -> str:
+    lines = ["🎙 <b>LetsTranscriber</b>"]
+    health = _run(["curl", "-sf", "--max-time", "3", f"{api_url}/v1/health"], timeout=4)
+    if health:
+        try:
+            data = json.loads(health)
+            lines.append(
+                f"API: ok · модель {'загружена' if data.get('model_loaded') else 'не в памяти'}"
+            )
+            lines.append(
+                f"Очередь: {data.get('queue_size', 0)} · preset: {data.get('current_preset') or '—'}"
+            )
+        except json.JSONDecodeError:
+            lines.append(f"API: {health[:120]}")
+    else:
+        lines.append("API: недоступен")
+
+    stats = {row.split("\t", 1)[0]: row for row in stats_rows}
+    for cname in ("letstranscriber-api-1", "letstranscriber-bot-1", "letstranscriber-db-1"):
+        row = stats.get(cname)
+        if not row:
+            continue
+        name, cpu, mem, _mem_pct = row.split("\t", 3)
+        short = name.replace("letstranscriber-", "").removesuffix("-1")
+        lines.append(f"• <code>{short}</code>: CPU {cpu}, RAM {mem}")
+    return "\n".join(lines)
