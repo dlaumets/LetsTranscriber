@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
@@ -22,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+
+
+async def safe_edit_text(message: Message, text: str, **kwargs) -> bool:
+    """Edit message text; ignore Telegram 'message is not modified' errors."""
+    try:
+        await message.edit_text(text, **kwargs)
+        return True
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return False
+        raise
 
 
 def settings_keyboard(preset: str, save_history: bool) -> InlineKeyboardMarkup:
@@ -127,6 +139,7 @@ async def on_toggle_save(callback: CallbackQuery) -> None:
 async def poll_job(api_key: str, job_id: str, status_msg: Message) -> dict:
     """Poll until job completes or fails."""
     delay = 2.0
+    last_progress_text = ""
     async with httpx.AsyncClient(timeout=30.0) as client:
         for attempt in range(7200):
             response = await client.get(
@@ -154,7 +167,10 @@ async def poll_job(api_key: str, job_id: str, status_msg: Message) -> dict:
                     "pending": "очередь",
                 }.get(stage, stage)
                 bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-                await status_msg.edit_text(f"⏳ {stage_ru}\n[{bar}] {pct}%")
+                progress_text = f"⏳ {stage_ru}\n[{bar}] {pct}%"
+                if progress_text != last_progress_text:
+                    if await safe_edit_text(status_msg, progress_text):
+                        last_progress_text = progress_text
 
             await asyncio.sleep(delay)
             if delay < 15:
@@ -190,7 +206,7 @@ async def transcribe_via_api(
         if response.status_code == 202:
             data = response.json()
             job_id = data["job_id"]
-            await status_msg.edit_text("⏳ В очереди…")
+            await safe_edit_text(status_msg, "⏳ В очереди…")
             return await poll_job(api_key, job_id, status_msg)
 
         response.raise_for_status()
@@ -198,11 +214,12 @@ async def transcribe_via_api(
 
 
 async def send_transcription_result(message: Message, status_msg: Message, text: str) -> None:
-    if len(text) <= 4096:
-        await status_msg.edit_text(text or "(пусто)")
+    result_text = text or "(пусто)"
+    if len(result_text) <= 4096:
+        await safe_edit_text(status_msg, result_text)
     else:
         await status_msg.delete()
-        doc = BufferedInputFile(text.encode("utf-8"), filename="transcription.txt")
+        doc = BufferedInputFile(result_text.encode("utf-8"), filename="transcription.txt")
         await message.answer_document(doc, caption="Текст слишком длинный для сообщения")
 
 
@@ -245,10 +262,10 @@ async def on_audio(message: Message, bot: Bot) -> None:
         )
         await send_transcription_result(message, status, result.get("text", ""))
     except httpx.HTTPStatusError as exc:
-        await status.edit_text(f"Ошибка API: {exc.response.text[:300]}")
+        await safe_edit_text(status, f"Ошибка API: {exc.response.text[:300]}")
     except Exception as exc:
         logger.exception("Transcription failed")
-        await status.edit_text(f"Ошибка: {exc}")
+        await safe_edit_text(status, f"Ошибка: {exc}")
     finally:
         temp_path.unlink(missing_ok=True)
 
