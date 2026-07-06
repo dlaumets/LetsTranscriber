@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 
@@ -18,17 +17,17 @@ class Preset:
     condition_on_previous_text: bool = True
 
 
+# Silero VAD defaults used by faster-whisper examples.
 DEFAULT_VAD = {"min_silence_duration_ms": 500, "speech_pad_ms": 400}
-FAST_VAD = {"min_silence_duration_ms": 650, "speech_pad_ms": 250}
 
 PRESETS: dict[str, Preset] = {
     "fast": Preset(
         id="fast",
         label="Быстро",
-        model="tiny",
+        model="base",
         compute_type="int8",
-        description="Максимальная скорость для коротких голосовых",
-        vad_parameters={**FAST_VAD},
+        description="base + greedy (beam 1) — черновик и короткие голосовые",
+        vad_parameters={**DEFAULT_VAD},
         beam_size=1,
         best_of=1,
         condition_on_previous_text=False,
@@ -36,20 +35,20 @@ PRESETS: dict[str, Preset] = {
     "balanced": Preset(
         id="balanced",
         label="Баланс",
-        model="base",
+        model="small",
         compute_type="int8",
-        description="Оптимальный баланс скорости и качества на CPU",
-        vad_parameters={**FAST_VAD},
-        beam_size=1,
+        description="small + beam 2 — рекомендуемый баланс для русского на CPU",
+        vad_parameters={**DEFAULT_VAD},
+        beam_size=2,
         best_of=1,
-        condition_on_previous_text=False,
+        condition_on_previous_text=True,
     ),
     "quality": Preset(
         id="quality",
         label="Качество",
         model="medium",
         compute_type="int8",
-        description="Максимальное качество, медленнее на CPU",
+        description="medium + beam 5 — близко к дефолту OpenAI Whisper",
         vad_parameters={"min_silence_duration_ms": 700, "speech_pad_ms": 300},
         beam_size=5,
         best_of=1,
