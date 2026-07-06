@@ -1,17 +1,28 @@
-# Replace YOUR_DOMAIN with your VPS domain
-YOUR_DOMAIN.com {
-    encode gzip
-
-    handle /bot/webhook* {
-        reverse_proxy bot:8081
-    }
-
-    handle {
-        reverse_proxy api:8000
-    }
+# HTTP-only until a real domain is configured.
+# Caddy's default auto-HTTPS redirects IP:80 → broken https://IP (no cert).
+{
+	auto_https off
 }
 
-# HTTP → HTTPS redirect (uncomment when domain is set)
-# http://YOUR_DOMAIN.com {
-#     redir https://{host}{uri} permanent
+:80 {
+	encode gzip
+
+	handle /bot/webhook* {
+		reverse_proxy bot:8081
+	}
+
+	handle {
+		reverse_proxy api:8000
+	}
+}
+
+# When domain is ready, replace block below and remove global auto_https off:
+# your.domain.com {
+#     encode gzip
+#     handle /bot/webhook* {
+#         reverse_proxy bot:8081
+#     }
+#     handle {
+#         reverse_proxy api:8000
+#     }
 # }
