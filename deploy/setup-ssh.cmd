@@ -21,6 +21,6 @@ echo ssh letsscribe
 echo   (add deploy\ssh-config-snippet.txt to %%USERPROFILE%%\.ssh\config first)
 echo.
 echo --- After SSH works, on server run once ---
-echo ssh root@62.60.151.100 "curl -fsSL https://raw.githubusercontent.com/dlaumets/LetsScript/main/deploy/setup-server.sh | bash"
+echo ssh root@62.60.151.100 "curl -fsSL https://raw.githubusercontent.com/dlaumets/LetsScribe/main/deploy/setup-server.sh | bash"
 echo.
 pause

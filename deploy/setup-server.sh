@@ -4,7 +4,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/letsscribe}"
-REPO_URL="${REPO_URL:-https://github.com/dlaumets/LetsScript.git}"
+REPO_URL="${REPO_URL:-https://github.com/dlaumets/LetsScribe.git}"
 
 echo "==> Installing Docker..."
 if ! command -v docker &>/dev/null; then

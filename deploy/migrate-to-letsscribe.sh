@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time VPS migration: letstranscriber -> letsscribe
 # Run on the server as root after DNS is ready:
-#   curl -fsSL https://raw.githubusercontent.com/dlaumets/LetsScript/main/deploy/migrate-to-letsscribe.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/dlaumets/LetsScribe/main/deploy/migrate-to-letsscribe.sh | bash
 set -euo pipefail
 
 OLD=/opt/letstranscriber
@@ -18,7 +18,7 @@ else
 fi
 
 cd "$NEW"
-git remote set-url origin https://github.com/dlaumets/LetsScript.git 2>/dev/null || true
+git remote set-url origin https://github.com/dlaumets/LetsScribe.git 2>/dev/null || true
 git fetch origin main
 git reset --hard origin/main
 

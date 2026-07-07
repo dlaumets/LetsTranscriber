@@ -13,7 +13,7 @@ HOST = os.environ["VPS_HOST"]
 USER = os.environ.get("VPS_USER", "root")
 PASSWORD = os.environ["VPS_PASSWORD"]
 APP_DIR = os.environ.get("VPS_APP_DIR", "/opt/letsscribe")
-REPO = os.environ.get("VPS_REPO", "https://github.com/dlaumets/LetsScript.git")
+REPO = os.environ.get("VPS_REPO", "https://github.com/dlaumets/LetsScribe.git")
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 
 PUBKEY_PATH = Path(os.environ.get("SSH_PUBKEY", Path.home() / ".ssh" / "id_ed25519.pub"))
